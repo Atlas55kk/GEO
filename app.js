@@ -317,7 +317,8 @@ function evalExpr(expr, params = {}) {
     }
 
     try {
-        return Function(`"use strict"; return (${mathReplaced})`)();
+        const result = Function(`"use strict"; return (${mathReplaced})`)();
+        return (typeof result === 'number' && Number.isFinite(result) && !Number.isNaN(result)) ? result : 0;
     }
     catch {
         return 0;
@@ -373,8 +374,15 @@ function parseGeoFormat(text) {
             case 'p': {
                 if (tokens.length === 3) {
                     const id = tokens[1];
-                    const val = evalExpr(tokens[2], parameters);
-                    parameters[id] = val;
+                    const allowedMath = ['sin', 'cos', 'tan', 'sqrt', 'pow', 'abs', 'pi'];
+                    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(id)) {
+                        console.warn(`GEO Parser Line ${index + 1}: Invalid parameter ID '${id}'. Variable names must start with a letter or underscore and contain only alphanumeric characters or underscores.`);
+                    } else if (allowedMath.includes(id.toLowerCase())) {
+                        console.warn(`GEO Parser Line ${index + 1}: Invalid parameter ID '${id}'. Conflict with reserved mathematical keyword.`);
+                    } else {
+                        const val = evalExpr(tokens[2], parameters);
+                        parameters[id] = val;
+                    }
                 } else {
                     console.warn(`GEO Parser Line ${index + 1}: Invalid 'p' command. Expected 3 tokens.`);
                 }
