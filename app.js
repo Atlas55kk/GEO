@@ -287,7 +287,7 @@ function evalExpr(expr, params = {}) {
     let s = expr.replace(/\s+/g, '');
 
     // 1. Substitute whitelisted math functions and constants
-    const allowedMath = ['sin', 'cos', 'tan', 'sqrt', 'pow', 'abs', 'pi', 'PI'];
+    const allowedMath = ['sin', 'cos', 'tan', 'sqrt', 'pow', 'abs', 'pi'];
     let mathReplaced = s;
     allowedMath.forEach(fn => {
         const regex = new RegExp(`\\b${fn}\\b`, 'gi');
@@ -322,6 +322,147 @@ function evalExpr(expr, params = {}) {
     catch {
         return 0;
     }
+}
+
+/* =====================================================================
+   GEOMETRI (.geo) FORMAT PARSER
+   ===================================================================== */
+function parseGeoFormat(text) {
+    const lines = text.split(/\r?\n/);
+    const metadata = { name: "Geometri Model", version: "1.0.0", description: "" };
+    const parameters = {};
+    const vertices = [];
+    const primitives = [];
+
+    lines.forEach((line, index) => {
+        const commentIdx = line.indexOf('#');
+        let cleanLine = commentIdx !== -1 ? line.substring(0, commentIdx) : line;
+        cleanLine = cleanLine.trim();
+        if (cleanLine === '') return;
+
+        const tokens = cleanLine.split(/\s+/);
+        const cmd = tokens[0].toLowerCase();
+
+        switch (cmd) {
+            case 'meta': {
+                if (tokens.length >= 3) {
+                    const key = tokens[1].toLowerCase();
+                    const val = tokens.slice(2).join(' ');
+                    metadata[key] = val;
+                }
+                break;
+            }
+            case 'p': {
+                if (tokens.length === 3) {
+                    const id = tokens[1];
+                    const val = evalExpr(tokens[2], parameters);
+                    parameters[id] = val;
+                } else {
+                    console.warn(`GEO Parser Line ${index + 1}: Invalid 'p' command. Expected 3 tokens.`);
+                }
+                break;
+            }
+            case 'v': {
+                if (tokens.length === 5) {
+                    vertices.push({
+                        id: tokens[1],
+                        x: tokens[2],
+                        y: tokens[3],
+                        z: tokens[4]
+                    });
+                } else {
+                    console.warn(`GEO Parser Line ${index + 1}: Invalid 'v' command. Expected 5 tokens.`);
+                }
+                break;
+            }
+            case 'l': {
+                if (tokens.length === 3) {
+                    primitives.push({
+                        type: 'line',
+                        start: tokens[1],
+                        end: tokens[2]
+                    });
+                } else {
+                    console.warn(`GEO Parser Line ${index + 1}: Invalid 'l' command. Expected 3 tokens.`);
+                }
+                break;
+            }
+            case 'c': {
+                if (tokens.length === 6) {
+                    primitives.push({
+                        type: 'circle',
+                        center: tokens[1],
+                        radius: tokens[2],
+                        normal: [
+                            evalExpr(tokens[3], parameters),
+                            evalExpr(tokens[4], parameters),
+                            evalExpr(tokens[5], parameters)
+                        ]
+                    });
+                } else {
+                    console.warn(`GEO Parser Line ${index + 1}: Invalid 'c' command. Expected 6 tokens.`);
+                }
+                break;
+            }
+            case 'a': {
+                if (tokens.length === 8) {
+                    primitives.push({
+                        type: 'arc',
+                        center: tokens[1],
+                        radius: tokens[2],
+                        start_angle: tokens[3],
+                        end_angle: tokens[4],
+                        normal: [
+                            evalExpr(tokens[5], parameters),
+                            evalExpr(tokens[6], parameters),
+                            evalExpr(tokens[7], parameters)
+                        ]
+                    });
+                } else {
+                    console.warn(`GEO Parser Line ${index + 1}: Invalid 'a' command. Expected 8 tokens.`);
+                }
+                break;
+            }
+            case 'e': {
+                if (tokens.length === 7) {
+                    primitives.push({
+                        type: 'ellipse',
+                        center: tokens[1],
+                        radius_x: tokens[2],
+                        radius_y: tokens[3],
+                        normal: [
+                            evalExpr(tokens[4], parameters),
+                            evalExpr(tokens[5], parameters),
+                            evalExpr(tokens[6], parameters)
+                        ]
+                    });
+                } else {
+                    console.warn(`GEO Parser Line ${index + 1}: Invalid 'e' command. Expected 7 tokens.`);
+                }
+                break;
+            }
+            case 'b': {
+                if (tokens.length === 4 || tokens.length === 5) {
+                    primitives.push({
+                        type: 'bezier',
+                        control_points: tokens.slice(1)
+                    });
+                } else {
+                    console.warn(`GEO Parser Line ${index + 1}: Invalid 'b' command. Expected 4 or 5 tokens.`);
+                }
+                break;
+            }
+            default:
+                console.warn(`GEO Parser Line ${index + 1}: Unknown command '${cmd}'.`);
+        }
+    });
+
+    return {
+        metadata: metadata,
+        parameters: parameters,
+        vertices: vertices,
+        primitives: primitives
+    };
 }
 
 /* =====================================================================
@@ -518,11 +659,12 @@ function formatDateTime(date) {
     return `${d} ${m} | ${hrs}:${mins}`;
 }
 
-function addTab(name, data) {
+function addTab(name, data, rawText = null) {
     const versionId = 'ver_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     const newVersion = {
         id: versionId,
         data: data,
+        rawText: rawText,
         timestamp: new Date()
     };
 
@@ -569,7 +711,7 @@ function switchTab(id, autoFrame = false) {
     const activeVersion = tab.versions.find(v => v.id === tab.activeVersionId);
     if (activeVersion) {
         renderModel(activeVersion.data, autoFrame);
-        els.json.value = JSON.stringify(activeVersion.data, null, 2);
+        els.json.value = activeVersion.rawText ? activeVersion.rawText : JSON.stringify(activeVersion.data, null, 2);
         renderParams(activeVersion.data.parameters);
     }
     
@@ -585,7 +727,7 @@ function switchVersion(versionId) {
     const version = tab.versions.find(v => v.id === versionId);
     if (version) {
         renderModel(version.data, false); // Keep camera stable (no autoframe)
-        els.json.value = JSON.stringify(version.data, null, 2);
+        els.json.value = version.rawText ? version.rawText : JSON.stringify(version.data, null, 2);
         renderParams(version.data.parameters);
     }
     updateVersionsUI();
@@ -853,11 +995,28 @@ function checkUrl() {
     if (!d) return;
 
     try {
-        let json = d.trim().startsWith('{')
-            ? decodeURIComponent(d)
-            : atob(d.replace(/-/g, '+').replace(/_/g, '/'));
-        const parsed = JSON.parse(json);
-        addTab(p.get('tab') || parsed.metadata?.name || 'AI Model', parsed);
+        let text;
+        const decoded = decodeURIComponent(d);
+        if (decoded.trim().startsWith('{') || decoded.includes('\n') || decoded.includes(' ') || decoded.includes('v ') || decoded.includes('p ')) {
+            text = decoded;
+        } else {
+            try {
+                text = atob(d.replace(/-/g, '+').replace(/_/g, '/'));
+            } catch {
+                text = decoded;
+            }
+        }
+        
+        let parsed;
+        let rawText = null;
+        const trimmed = text.trim();
+        if (trimmed.startsWith('{')) {
+            parsed = JSON.parse(trimmed);
+        } else {
+            parsed = parseGeoFormat(trimmed);
+            rawText = trimmed;
+        }
+        addTab(p.get('tab') || parsed.metadata?.name || 'AI Model', parsed, rawText);
     } catch (e) {
         console.error('GEO: URL parse error', e);
         toast('Failed to load from URL', 'error');
@@ -869,8 +1028,20 @@ function checkUrl() {
    ===================================================================== */
 window.loadGeometriModel = function(jsonData, tabName = 'Live_Update') {
     try {
-        const parsed = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
-        addTab(tabName, parsed);
+        let parsed;
+        let rawText = null;
+        if (typeof jsonData === 'string') {
+            const trimmed = jsonData.trim();
+            if (trimmed.startsWith('{')) {
+                parsed = JSON.parse(trimmed);
+            } else {
+                parsed = parseGeoFormat(trimmed);
+                rawText = trimmed;
+            }
+        } else {
+            parsed = jsonData;
+        }
+        addTab(tabName, parsed, rawText);
     } catch (e) {
         console.error('GEO API error', e);
         toast('Failed to load model', 'error');
