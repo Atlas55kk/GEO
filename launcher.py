@@ -118,11 +118,14 @@ if __name__ == '__main__':
     time.sleep(0.5)
 
     # Check for pywebview dependency
-    try:
-        import webview
-        WEBVIEW_AVAILABLE = True
-    except ImportError:
+    if "--server-only" in sys.argv:
         WEBVIEW_AVAILABLE = False
+    else:
+        try:
+            import webview
+            WEBVIEW_AVAILABLE = True
+        except ImportError:
+            WEBVIEW_AVAILABLE = False
 
     if WEBVIEW_AVAILABLE:
         print("[*] Launching GEO in native Desktop Application mode...")

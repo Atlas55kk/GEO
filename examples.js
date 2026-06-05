@@ -3,6 +3,32 @@
  * Standard geometri format models for representation testing.
  */
 const GEO_EXAMPLES = {
+    "Parametric_CAD_Demo": {
+        "metadata": {
+            "name": "Parametric CAD Demo",
+            "version": "1.0.0",
+            "description": "Demonstration of advanced mathematical expressions and new CAD primitives (Arcs, Ellipses, Quadratic Beziers)."
+        },
+        "parameters": {
+            "radius_major": 6.0,
+            "radius_minor": 3.0,
+            "angle_rad": 1.047 // pi / 3
+        },
+        "vertices": [
+            { "id": "v_center", "x": 0.0, "y": 0.0, "z": 0.0 },
+            { "id": "v_spoke", "x": "radius_major * cos(angle_rad)", "y": "radius_major * sin(angle_rad)", "z": 0.0 },
+            { "id": "v_bezier_start", "x": -4.0, "y": 3.0, "z": -2.0 },
+            { "id": "v_bezier_ctrl", "x": 0.0, "y": "radius_major * 1.2", "z": 0.0 },
+            { "id": "v_bezier_end", "x": 4.0, "y": 3.0, "z": -2.0 }
+        ],
+        "primitives": [
+            { "type": "arc", "center": "v_center", "radius": "radius_major", "start_angle": 0, "end_angle": "pi", "normal": [0, 0, 1] },
+            { "type": "ellipse", "center": "v_center", "radius_x": "radius_major", "radius_y": "radius_minor", "normal": [0, 1, 0] },
+            { "type": "circle", "center": "v_center", "radius": "radius_minor", "normal": [0, 0, 1] },
+            { "type": "line", "start": "v_center", "end": "v_spoke" },
+            { "type": "bezier", "control_points": ["v_bezier_start", "v_bezier_ctrl", "v_bezier_end"] }
+        ]
+    },
     "ThreeD_Gears": {
         "metadata": {
                 "name": "3D Gear System",

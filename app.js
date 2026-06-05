@@ -285,12 +285,43 @@ function evalExpr(expr, params = {}) {
     if (typeof expr !== 'string') return 0;
 
     let s = expr.replace(/\s+/g, '');
-    const keys = Object.keys(params).sort((a, b) => b.length - a.length);
-    for (const k of keys) s = s.replace(new RegExp(k, 'g'), `(${params[k]})`);
 
-    if (!/^[0-9+\-*/().]+$/.test(s)) { console.warn('GEO: unsafe expr', expr); return 0; }
-    try { return Function(`"use strict"; return (${s})`)(); }
-    catch { return 0; }
+    // 1. Substitute whitelisted math functions and constants
+    const allowedMath = ['sin', 'cos', 'tan', 'sqrt', 'pow', 'abs', 'pi', 'PI'];
+    let mathReplaced = s;
+    allowedMath.forEach(fn => {
+        const regex = new RegExp(`\\b${fn}\\b`, 'gi');
+        if (fn.toLowerCase() === 'pi') {
+            mathReplaced = mathReplaced.replace(regex, 'Math.PI');
+        } else {
+            mathReplaced = mathReplaced.replace(regex, `Math.${fn}`);
+        }
+    });
+
+    // 2. Substitute parameters
+    const keys = Object.keys(params).sort((a, b) => b.length - a.length);
+    for (const k of keys) {
+        const regex = new RegExp(`\\b${k}\\b`, 'g');
+        mathReplaced = mathReplaced.replace(regex, `(${params[k]})`);
+    }
+
+    // 3. Safety validation check
+    let checkStr = mathReplaced;
+    allowedMath.forEach(fn => {
+        const regex = new RegExp(`Math\\.${fn}`, 'gi');
+        checkStr = checkStr.replace(regex, '');
+    });
+    if (!/^[0-9+\-*/(),.\s]+$/.test(checkStr)) {
+        console.warn('GEO: unsafe math expression', expr);
+        return 0;
+    }
+
+    try {
+        return Function(`"use strict"; return (${mathReplaced})`)();
+    }
+    catch {
+        return 0;
+    }
 }
 
 /* =====================================================================
@@ -359,22 +390,86 @@ function renderModel(data, autoFrame = false) {
                     primCount++;
                 }
             }
-            else if (p.type === 'bezier' && p.control_points?.length === 4) {
-                const [p0, p1, p2, p3] = p.control_points.map(id => verts[id]);
-                if (p0 && p1 && p2 && p3) {
+            else if (p.type === 'arc') {
+                const c = verts[p.center];
+                const r = evalExpr(p.radius, params);
+                const start = evalExpr(p.start_angle, params);
+                const end = evalExpr(p.end_angle, params);
+                if (c && r > 0) {
                     const pts = [];
-                    for (let i = 0; i <= 48; i++) {
-                        const t = i / 48, mt = 1 - t;
-                        pts.push(new THREE.Vector3(
-                            mt*mt*mt*p0.x + 3*mt*mt*t*p1.x + 3*mt*t*t*p2.x + t*t*t*p3.x,
-                            mt*mt*mt*p0.y + 3*mt*mt*t*p1.y + 3*mt*t*t*p2.y + t*t*t*p3.y,
-                            mt*mt*mt*p0.z + 3*mt*mt*t*p1.z + 3*mt*t*t*p2.z + t*t*t*p3.z
-                        ));
+                    const steps = 32;
+                    for (let i = 0; i <= steps; i++) {
+                        const t = start + (i / steps) * (end - start);
+                        pts.push(new THREE.Vector3(Math.cos(t) * r, Math.sin(t) * r, 0));
                     }
-                    const curveMat = new THREE.LineBasicMaterial({ color: isDark ? 0x0ea5e9 : 0x0284c7 });
                     const g = new THREE.BufferGeometry().setFromPoints(pts);
-                    state.modelGroup.add(new THREE.Line(g, curveMat));
+                    const arcLine = new THREE.Line(g, edgeMat);
+                    arcLine.position.copy(c);
+                    if (p.normal && p.normal.length === 3) {
+                        const n = new THREE.Vector3(...p.normal).normalize();
+                        arcLine.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+                    }
+                    state.modelGroup.add(arcLine);
                     primCount++;
+                }
+            }
+            else if (p.type === 'ellipse') {
+                const c = verts[p.center];
+                const rx = evalExpr(p.radius_x, params);
+                const ry = evalExpr(p.radius_y, params);
+                if (c && rx > 0 && ry > 0) {
+                    const pts = [];
+                    for (let i = 0; i <= 64; i++) {
+                        const t = (i / 64) * Math.PI * 2;
+                        pts.push(new THREE.Vector3(Math.cos(t) * rx, Math.sin(t) * ry, 0));
+                    }
+                    const g = new THREE.BufferGeometry().setFromPoints(pts);
+                    const ellipseLine = new THREE.Line(g, edgeMat);
+                    ellipseLine.position.copy(c);
+                    if (p.normal && p.normal.length === 3) {
+                        const n = new THREE.Vector3(...p.normal).normalize();
+                        ellipseLine.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+                    }
+                    state.modelGroup.add(ellipseLine);
+                    primCount++;
+                }
+            }
+            else if (p.type === 'bezier') {
+                if (p.control_points?.length === 3) {
+                    const [p0, p1, p2] = p.control_points.map(id => verts[id]);
+                    if (p0 && p1 && p2) {
+                        const pts = [];
+                        for (let i = 0; i <= 48; i++) {
+                            const t = i / 48, mt = 1 - t;
+                            pts.push(new THREE.Vector3(
+                                mt*mt*p0.x + 2*mt*t*p1.x + t*t*p2.x,
+                                mt*mt*p0.y + 2*mt*t*p1.y + t*t*p2.y,
+                                mt*mt*p0.z + 2*mt*t*p1.z + t*t*p2.z
+                            ));
+                        }
+                        const curveMat = new THREE.LineBasicMaterial({ color: isDark ? 0x0ea5e9 : 0x0284c7 });
+                        const g = new THREE.BufferGeometry().setFromPoints(pts);
+                        state.modelGroup.add(new THREE.Line(g, curveMat));
+                        primCount++;
+                    }
+                }
+                else if (p.control_points?.length === 4) {
+                    const [p0, p1, p2, p3] = p.control_points.map(id => verts[id]);
+                    if (p0 && p1 && p2 && p3) {
+                        const pts = [];
+                        for (let i = 0; i <= 48; i++) {
+                            const t = i / 48, mt = 1 - t;
+                            pts.push(new THREE.Vector3(
+                                mt*mt*mt*p0.x + 3*mt*mt*t*p1.x + 3*mt*t*t*p2.x + t*t*t*p3.x,
+                                mt*mt*mt*p0.y + 3*mt*mt*t*p1.y + 3*mt*t*t*p2.y + t*t*t*p3.y,
+                                mt*mt*mt*p0.z + 3*mt*mt*t*p1.z + 3*mt*t*t*p2.z + t*t*t*p3.z
+                            ));
+                        }
+                        const curveMat = new THREE.LineBasicMaterial({ color: isDark ? 0x0ea5e9 : 0x0284c7 });
+                        const g = new THREE.BufferGeometry().setFromPoints(pts);
+                        state.modelGroup.add(new THREE.Line(g, curveMat));
+                        primCount++;
+                    }
                 }
             }
         });
@@ -625,11 +720,11 @@ function initControls() {
         addTab('Parametric Bracket', GEO_EXAMPLES.Parametric_Bracket);
     };
 
-    // Gears Demo Loading
-    const btnGears = $('btn-load-gears');
-    if (btnGears) {
-        btnGears.onclick = () => {
-            addTab('3D Gears', GEO_EXAMPLES.ThreeD_Gears);
+    // Parametric Demo Loading
+    const btnParametric = $('btn-load-parametric');
+    if (btnParametric) {
+        btnParametric.onclick = () => {
+            addTab('Parametric Demo', GEO_EXAMPLES.Parametric_CAD_Demo);
         };
     }
 
