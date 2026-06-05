@@ -1,648 +1,779 @@
 /**
- * GEO Visualizer Application Logic
- * Core 3D engine, parser, and tab controller.
+ * GEO Visualizer — Application Logic v2
+ * Professional CAD-grade 3D engine, parser, tab controller.
  */
 
-// State Management
+/* =====================================================================
+   STATE
+   ===================================================================== */
 const state = {
-    tabs: [],
+    tabs: [], // Array of tab objects: { id, name, versions: [ { id, data, timestamp } ], activeVersionId: null }
     activeTabId: null,
+    showVersionsPanel: true,
     theme: 'dark',
     showGrid: true,
     showAxes: true,
-    // Three.js Objects
+    ortho: false,
     scene: null,
-    camera: null,
+    perspCamera: null,
+    orthoCamera: null,
     renderer: null,
     controls: null,
-    gridHelper: null,
-    axesHelper: null,
-    modelGroup: null // Group to hold current 3D representation
+    gridGroup: null,
+    axesGroup: null,
+    modelGroup: null,
+    raycaster: null,
+    mouse: new THREE.Vector2(),
 };
 
-// UI Elements
+/* =====================================================================
+   DOM REFERENCES
+   ===================================================================== */
+const $ = id => document.getElementById(id);
 const els = {
-    canvasContainer: document.getElementById('canvas-container'),
-    tabsContainer: document.getElementById('tabs-container'),
-    paramsContainer: document.getElementById('params-container'),
-    jsonViewer: document.getElementById('json-viewer'),
-    onboardingView: document.getElementById('onboarding-view'),
-    btnLoadDemo: document.getElementById('btn-load-demo'),
-    btnClearTabs: document.getElementById('btn-clear-tabs'),
-    btnCopyCode: document.getElementById('btn-copy-code'),
-    btnCopyPrompt: document.getElementById('btn-copy-prompt'),
-    // Controls
-    ctrlGrid: document.getElementById('ctrl-grid'),
-    ctrlAxes: document.getElementById('ctrl-axes'),
-    ctrlCamera: document.getElementById('ctrl-camera'),
-    ctrlTheme: document.getElementById('ctrl-theme'),
-    // Info panel
-    infoVertices: document.getElementById('info-vertices'),
-    infoPrimitives: document.getElementById('info-primitives'),
-    infoBounds: document.getElementById('info-bounds'),
-    toastContainer: document.getElementById('toast-container'),
-    connectionStatus: document.getElementById('connection-status')
+    canvas:            $('canvas-container'),
+    tabs:              $('tabs-container'),
+    params:            $('params-container'),
+    json:              $('json-viewer'),
+    onboarding:        $('onboarding-view'),
+    btnDemo:           $('btn-load-demo'),
+    btnClearVersions:  $('btn-clear-versions'),
+    btnCopy:           $('btn-copy-code'),
+    btnPrompt:         $('btn-copy-prompt'),
+    ctrlGrid:          $('ctrl-grid'),
+    ctrlAxes:          $('ctrl-axes'),
+    ctrlCamera:        $('ctrl-camera'),
+    ctrlOrtho:         $('ctrl-ortho'),
+    ctrlTheme:         $('ctrl-theme'),
+    infoV:             $('info-vertices'),
+    infoP:             $('info-primitives'),
+    infoB:             $('info-bounds'),
+    toasts:            $('toast-container'),
+    status:            $('connection-status'),
+    coordX:            $('coord-x'),
+    coordY:            $('coord-y'),
+    coordZ:            $('coord-z'),
+    axisX:             $('axis-label-x'),
+    axisY:             $('axis-label-y'),
+    axisZ:             $('axis-label-z'),
+    versionsPanel:     $('versions-panel'),
+    versionsList:      $('versions-list'),
+    btnToggleVersions: $('btn-toggle-versions'),
+    headerCode:        $('header-code'),
+    headerVersions:    $('header-versions'),
+    panelCode:         $('panel-code'),
 };
 
-/* ==========================================================================
-   Three.js Engine Initialization
-   ========================================================================== */
+/* =====================================================================
+   THREE.JS ENGINE
+   ===================================================================== */
 function initThree() {
-    // Create Scene
+    const w = els.canvas.clientWidth;
+    const h = els.canvas.clientHeight;
+
+    // Scene
     state.scene = new THREE.Scene();
-    state.scene.background = new THREE.Color(state.theme === 'dark' ? 0x08090c : 0xf0f0f0);
+    state.scene.background = new THREE.Color(0x0a0e17);
 
-    // Create Camera
-    const aspect = els.canvasContainer.clientWidth / els.canvasContainer.clientHeight;
-    state.camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000);
-    state.camera.position.set(15, 15, 20);
+    // Perspective Camera
+    state.perspCamera = new THREE.PerspectiveCamera(40, w / h, 0.1, 2000);
+    state.perspCamera.position.set(18, 14, 22);
 
-    // Create Renderer
-    state.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    state.renderer.setSize(els.canvasContainer.clientWidth, els.canvasContainer.clientHeight);
-    state.renderer.setPixelRatio(window.devicePixelRatio);
-    els.canvasContainer.appendChild(state.renderer.domElement);
+    // Orthographic Camera
+    const frustum = 15;
+    const aspect = w / h;
+    state.orthoCamera = new THREE.OrthographicCamera(
+        -frustum * aspect, frustum * aspect,
+        frustum, -frustum, 0.1, 2000
+    );
+    state.orthoCamera.position.set(18, 14, 22);
 
-    // Add Orbit Controls
-    state.controls = new THREE.OrbitControls(state.camera, state.renderer.domElement);
+    // Renderer
+    state.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    state.renderer.setSize(w, h);
+    state.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    els.canvas.appendChild(state.renderer.domElement);
+
+    // Controls
+    state.controls = new THREE.OrbitControls(getCamera(), state.renderer.domElement);
     state.controls.enableDamping = true;
     state.controls.dampingFactor = 0.05;
-    state.controls.maxPolarAngle = Math.PI / 2 + 0.1; // Don't go too far below ground
+    state.controls.rotateSpeed = 0.6;
+    state.controls.zoomSpeed = 0.8;
+    state.controls.panSpeed = 0.5;
+    state.controls.minDistance = 2;
+    state.controls.maxDistance = 200;
 
-    // Add Helpers
-    state.gridHelper = new THREE.GridHelper(30, 30, 0x9333ea, 0x1e293b);
-    state.gridHelper.position.y = -0.01; // Avoid z-fighting with shapes
-    state.scene.add(state.gridHelper);
+    // Lights
+    state.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.65);
+    dir.position.set(12, 25, 18);
+    state.scene.add(dir);
 
-    state.axesHelper = new THREE.AxesHelper(10);
-    // Custom colors for axes: X = redish, Y = greenish, Z = blueish
-    state.scene.add(state.axesHelper);
+    // Grid
+    state.gridGroup = new THREE.Group();
+    buildGrid();
+    state.scene.add(state.gridGroup);
 
-    // Add Lights
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    state.scene.add(ambientLight);
+    // Axes
+    state.axesGroup = new THREE.Group();
+    buildAxes();
+    state.scene.add(state.axesGroup);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(10, 20, 15);
-    state.scene.add(dirLight);
-
-    // Model group container
+    // Model container
     state.modelGroup = new THREE.Group();
     state.scene.add(state.modelGroup);
 
-    // Handle Window Resize
-    window.addEventListener('resize', onWindowResize);
+    // Raycaster for coordinate readout
+    state.raycaster = new THREE.Raycaster();
 
-    // Animation Loop
+    // Events
+    window.addEventListener('resize', onResize);
+    els.canvas.addEventListener('mousemove', onMouseMove);
+
     animate();
+}
+
+function getCamera() {
+    return state.ortho ? state.orthoCamera : state.perspCamera;
+}
+
+function syncCameras() {
+    const target = state.controls.target;
+    if (state.ortho) {
+        // Perspective to Orthographic
+        const dist = state.perspCamera.position.distanceTo(target);
+        const halfHeight = dist * Math.tan((state.perspCamera.fov * Math.PI) / 360);
+        const baseFrustum = 15;
+        state.orthoCamera.zoom = baseFrustum / halfHeight;
+        
+        state.orthoCamera.position.copy(state.perspCamera.position);
+        state.orthoCamera.quaternion.copy(state.perspCamera.quaternion);
+        state.orthoCamera.updateProjectionMatrix();
+    } else {
+        // Orthographic to Perspective
+        const baseFrustum = 15;
+        const halfHeight = baseFrustum / state.orthoCamera.zoom;
+        const dist = halfHeight / Math.tan((state.perspCamera.fov * Math.PI) / 360);
+        
+        const dir = new THREE.Vector3().subVectors(state.orthoCamera.position, target).normalize();
+        state.perspCamera.position.copy(target).addScaledVector(dir, dist);
+        state.perspCamera.quaternion.copy(state.orthoCamera.quaternion);
+        state.perspCamera.updateProjectionMatrix();
+    }
+}
+
+function buildGrid() {
+    // Clear existing
+    while (state.gridGroup.children.length) state.gridGroup.remove(state.gridGroup.children[0]);
+
+    const isDark = state.theme === 'dark';
+
+    // Major grid (every 5 units)
+    const majorGrid = new THREE.GridHelper(50, 10,
+        isDark ? 0x2a3654 : 0xb0bec5,
+        isDark ? 0x2a3654 : 0xb0bec5
+    );
+    majorGrid.position.y = -0.01;
+    state.gridGroup.add(majorGrid);
+
+    // Minor grid (every 1 unit)
+    const minorGrid = new THREE.GridHelper(50, 50,
+        isDark ? 0x172033 : 0xdce3ea,
+        isDark ? 0x172033 : 0xdce3ea
+    );
+    minorGrid.position.y = -0.02;
+    state.gridGroup.add(minorGrid);
+}
+
+function buildAxes() {
+    while (state.axesGroup.children.length) state.axesGroup.remove(state.axesGroup.children[0]);
+
+    const len = 25;
+    const colors = [0xef4444, 0x22c55e, 0x3b82f6]; // X, Y, Z
+    const dirs = [
+        new THREE.Vector3(1, 0, 0),
+        new THREE.Vector3(0, 1, 0),
+        new THREE.Vector3(0, 0, 1)
+    ];
+
+    dirs.forEach((dir, i) => {
+        const pts = [new THREE.Vector3(0, 0, 0), dir.clone().multiplyScalar(len)];
+        const geo = new THREE.BufferGeometry().setFromPoints(pts);
+        const mat = new THREE.LineBasicMaterial({ color: colors[i], transparent: true, opacity: 0.6 });
+        state.axesGroup.add(new THREE.Line(geo, mat));
+    });
 }
 
 function animate() {
     requestAnimationFrame(animate);
     state.controls.update();
-    state.renderer.render(state.scene, state.camera);
+
+    const cam = getCamera();
+    state.renderer.render(state.scene, cam);
+
+    // Update axis label positions (project 3D → 2D screen coords)
+    if (state.showAxes) {
+        updateAxisLabel(els.axisX, new THREE.Vector3(26, 0, 0), cam);
+        updateAxisLabel(els.axisY, new THREE.Vector3(0, 26, 0), cam);
+        updateAxisLabel(els.axisZ, new THREE.Vector3(0, 0, 26), cam);
+    }
 }
 
-function onWindowResize() {
-    const width = els.canvasContainer.clientWidth;
-    const height = els.canvasContainer.clientHeight;
-    state.camera.aspect = width / height;
-    state.camera.updateProjectionMatrix();
-    state.renderer.setSize(width, height);
+function updateAxisLabel(labelEl, worldPos, cam) {
+    if (!labelEl) return;
+    const v = worldPos.clone().project(cam);
+    const hw = els.canvas.clientWidth / 2;
+    const hh = els.canvas.clientHeight / 2;
+    const sx = (v.x * hw) + hw;
+    const sy = -(v.y * hh) + hh;
+
+    if (v.z > 1 || sx < 0 || sy < 0 || sx > els.canvas.clientWidth || sy > els.canvas.clientHeight) {
+        labelEl.style.display = 'none';
+    } else {
+        labelEl.style.display = 'block';
+        labelEl.style.left = sx + 'px';
+        labelEl.style.top = sy + 'px';
+    }
 }
 
-/* ==========================================================================
-   Expression Parser & Math Solver
-   ========================================================================== */
-function evaluateExpression(expr, params = {}) {
+function onResize() {
+    const w = els.canvas.clientWidth;
+    const h = els.canvas.clientHeight;
+    if (w === 0 || h === 0) return;
+
+    state.perspCamera.aspect = w / h;
+    state.perspCamera.updateProjectionMatrix();
+
+    const frustum = 15;
+    const aspect = w / h;
+    state.orthoCamera.left = -frustum * aspect;
+    state.orthoCamera.right = frustum * aspect;
+    state.orthoCamera.top = frustum;
+    state.orthoCamera.bottom = -frustum;
+    state.orthoCamera.updateProjectionMatrix();
+
+    state.renderer.setSize(w, h);
+}
+
+function onMouseMove(e) {
+    const rect = els.canvas.getBoundingClientRect();
+    state.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    state.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+    // Raycast to ground plane for coordinate readout
+    const cam = getCamera();
+    state.raycaster.setFromCamera(state.mouse, cam);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const pt = new THREE.Vector3();
+    state.raycaster.ray.intersectPlane(plane, pt);
+
+    if (pt) {
+        els.coordX.textContent = pt.x.toFixed(2);
+        els.coordY.textContent = pt.y.toFixed(2);
+        els.coordZ.textContent = pt.z.toFixed(2);
+    }
+}
+
+/* =====================================================================
+   MATH EXPRESSION PARSER
+   ===================================================================== */
+function evalExpr(expr, params = {}) {
     if (typeof expr === 'number') return expr;
     if (typeof expr !== 'string') return 0;
 
-    // Remove whitespace
-    let sanitized = expr.replace(/\s+/g, '');
+    let s = expr.replace(/\s+/g, '');
+    const keys = Object.keys(params).sort((a, b) => b.length - a.length);
+    for (const k of keys) s = s.replace(new RegExp(k, 'g'), `(${params[k]})`);
 
-    // Substitute parameter values
-    // Sort parameters by length descending so longer parameters are replaced first (avoid partial substring match issues)
-    const sortedParamKeys = Object.keys(params).sort((a, b) => b.length - a.length);
-    for (const key of sortedParamKeys) {
-        const regex = new RegExp(key, 'g');
-        sanitized = sanitized.replace(regex, `(${params[key]})`);
-    }
-
-    // Sanitize string to prevent arbitrary code execution
-    // Only allow numbers, math operators, decimals, and parentheses
-    if (!/^[0-9+\-*/().]+$/.test(sanitized)) {
-        console.warn(`GEO Parser: Unsafe expression detected: "${expr}" resolved to "${sanitized}"`);
-        return 0;
-    }
-
-    try {
-        // Safe evaluation since it's sanitized to mathematical characters only
-        return Function(`"use strict"; return (${sanitized})`)();
-    } catch (e) {
-        console.error(`GEO Parser: Failed to evaluate expression: "${expr}" (resolved: "${sanitized}")`, e);
-        return 0;
-    }
+    if (!/^[0-9+\-*/().]+$/.test(s)) { console.warn('GEO: unsafe expr', expr); return 0; }
+    try { return Function(`"use strict"; return (${s})`)(); }
+    catch { return 0; }
 }
 
-/* ==========================================================================
-   Model Parsing & 3D Wireframe Generation
-   ========================================================================== */
-function renderModel(modelData) {
-    // Clear previous model representation
-    while(state.modelGroup.children.length > 0){ 
-        const obj = state.modelGroup.children[0];
-        state.modelGroup.remove(obj);
-    }
+/* =====================================================================
+   MODEL RENDERING
+   ===================================================================== */
+function renderModel(data, autoFrame = false) {
+    // Clear
+    while (state.modelGroup.children.length) state.modelGroup.remove(state.modelGroup.children[0]);
+    if (!data || !data.vertices) return;
 
-    if (!modelData || !modelData.vertices) return;
+    const params = data.parameters || {};
+    const verts = {};
+    const isDark = state.theme === 'dark';
 
-    const params = modelData.parameters || {};
-    const resolvedVertices = {};
+    // Vertices
+    const dotGeo = new THREE.SphereGeometry(0.06, 12, 12);
+    const dotMat = new THREE.MeshBasicMaterial({ color: isDark ? 0x60a5fa : 0x2563eb });
 
-    // 1. Resolve Vertices coordinates
-    modelData.vertices.forEach(v => {
-        const x = evaluateExpression(v.x, params);
-        const y = evaluateExpression(v.y, params);
-        const z = evaluateExpression(v.z, params);
-        resolvedVertices[v.id] = new THREE.Vector3(x, y, z);
+    data.vertices.forEach(v => {
+        const pos = new THREE.Vector3(
+            evalExpr(v.x, params),
+            evalExpr(v.y, params),
+            evalExpr(v.z, params)
+        );
+        verts[v.id] = pos;
 
-        // Render Vertex Sphere (Dots)
-        const dotGeo = new THREE.SphereGeometry(0.12, 16, 16);
-        const dotMat = new THREE.MeshBasicMaterial({ 
-            color: state.theme === 'dark' ? 0x9333ea : 0x7e22ce // Neon Purple
-        });
-        const dotMesh = new THREE.Mesh(dotGeo, dotMat);
-        dotMesh.position.copy(resolvedVertices[v.id]);
-        state.modelGroup.add(dotMesh);
+        const mesh = new THREE.Mesh(dotGeo, dotMat);
+        mesh.position.copy(pos);
+        state.modelGroup.add(mesh);
     });
 
-    let primitiveCount = 0;
+    // Edge material
+    const edgeMat = new THREE.LineBasicMaterial({
+        color: isDark ? 0xcbd5e1 : 0x334155
+    });
 
-    // 2. Render Primitives (Lines, Circles, Curves)
-    if (modelData.primitives) {
-        const lineMaterial = new THREE.LineBasicMaterial({
-            color: state.theme === 'dark' ? 0x06b6d4 : 0x0891b2, // Neon Cyan
-            linewidth: 2 // Note: linewidth parameter is ignored by WebGL canvas in most browsers
-        });
+    let primCount = 0;
 
-        modelData.primitives.forEach(prim => {
-            if (prim.type === 'line') {
-                const startPt = resolvedVertices[prim.start];
-                const endPt = resolvedVertices[prim.end];
-                if (startPt && endPt) {
-                    const points = [startPt, endPt];
-                    const geo = new THREE.BufferGeometry().setFromPoints(points);
-                    const line = new THREE.Line(geo, lineMaterial);
-                    state.modelGroup.add(line);
-                    primitiveCount++;
-                }
-            } 
-            else if (prim.type === 'circle') {
-                const center = resolvedVertices[prim.center];
-                const radius = evaluateExpression(prim.radius, params);
-                if (center && radius > 0) {
-                    const segments = 64;
-                    const points = [];
-                    // Generate circle points in local XY plane
-                    for (let i = 0; i <= segments; i++) {
-                        const theta = (i / segments) * Math.PI * 2;
-                        points.push(new THREE.Vector3(Math.cos(theta) * radius, Math.sin(theta) * radius, 0));
-                    }
-
-                    const geo = new THREE.BufferGeometry().setFromPoints(points);
-                    const circle = new THREE.Line(geo, lineMaterial);
-                    circle.position.copy(center);
-
-                    // Re-orient if custom normal is supplied
-                    if (prim.normal && Array.isArray(prim.normal) && prim.normal.length === 3) {
-                        const norm = new THREE.Vector3(prim.normal[0], prim.normal[1], prim.normal[2]).normalize();
-                        const up = new THREE.Vector3(0, 0, 1);
-                        const q = new THREE.Quaternion().setFromUnitVectors(up, norm);
-                        circle.quaternion.copy(q);
-                    }
-                    
-                    state.modelGroup.add(circle);
-                    primitiveCount++;
+    if (data.primitives) {
+        data.primitives.forEach(p => {
+            if (p.type === 'line') {
+                const a = verts[p.start], b = verts[p.end];
+                if (a && b) {
+                    const g = new THREE.BufferGeometry().setFromPoints([a, b]);
+                    state.modelGroup.add(new THREE.Line(g, edgeMat));
+                    primCount++;
                 }
             }
-            else if (prim.type === 'bezier') {
-                // Cubic Bezier curve (4 control points)
-                if (prim.control_points && prim.control_points.length === 4) {
-                    const p0 = resolvedVertices[prim.control_points[0]];
-                    const p1 = resolvedVertices[prim.control_points[1]];
-                    const p2 = resolvedVertices[prim.control_points[2]];
-                    const p3 = resolvedVertices[prim.control_points[3]];
-
-                    if (p0 && p1 && p2 && p3) {
-                        const segments = 48;
-                        const points = [];
-                        
-                        // Cubic Bezier formula: B(t) = (1-t)^3*P0 + 3(1-t)^2*t*P1 + 3(1-t)*t^2*P2 + t^3*P3
-                        for (let i = 0; i <= segments; i++) {
-                            const t = i / segments;
-                            const mt = 1 - t;
-                            
-                            const x = mt*mt*mt*p0.x + 3*mt*mt*t*p1.x + 3*mt*t*t*p2.x + t*t*t*p3.x;
-                            const y = mt*mt*mt*p0.y + 3*mt*mt*t*p1.y + 3*mt*t*t*p2.y + t*t*t*p3.y;
-                            const z = mt*mt*mt*p0.z + 3*mt*mt*t*p1.z + 3*mt*t*t*p2.z + t*t*t*p3.z;
-                            
-                            points.push(new THREE.Vector3(x, y, z));
-                        }
-
-                        const curveMat = new THREE.LineBasicMaterial({
-                            color: 0xa855f7, // Purple for Bezier splines
-                            linewidth: 2
-                        });
-                        const geo = new THREE.BufferGeometry().setFromPoints(points);
-                        const curve = new THREE.Line(geo, curveMat);
-                        state.modelGroup.add(curve);
-                        primitiveCount++;
+            else if (p.type === 'circle') {
+                const c = verts[p.center];
+                const r = evalExpr(p.radius, params);
+                if (c && r > 0) {
+                    const pts = [];
+                    for (let i = 0; i <= 64; i++) {
+                        const t = (i / 64) * Math.PI * 2;
+                        pts.push(new THREE.Vector3(Math.cos(t) * r, Math.sin(t) * r, 0));
                     }
+                    const g = new THREE.BufferGeometry().setFromPoints(pts);
+                    const circle = new THREE.Line(g, edgeMat);
+                    circle.position.copy(c);
+                    if (p.normal && p.normal.length === 3) {
+                        const n = new THREE.Vector3(...p.normal).normalize();
+                        circle.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+                    }
+                    state.modelGroup.add(circle);
+                    primCount++;
+                }
+            }
+            else if (p.type === 'bezier' && p.control_points?.length === 4) {
+                const [p0, p1, p2, p3] = p.control_points.map(id => verts[id]);
+                if (p0 && p1 && p2 && p3) {
+                    const pts = [];
+                    for (let i = 0; i <= 48; i++) {
+                        const t = i / 48, mt = 1 - t;
+                        pts.push(new THREE.Vector3(
+                            mt*mt*mt*p0.x + 3*mt*mt*t*p1.x + 3*mt*t*t*p2.x + t*t*t*p3.x,
+                            mt*mt*mt*p0.y + 3*mt*mt*t*p1.y + 3*mt*t*t*p2.y + t*t*t*p3.y,
+                            mt*mt*mt*p0.z + 3*mt*mt*t*p1.z + 3*mt*t*t*p2.z + t*t*t*p3.z
+                        ));
+                    }
+                    const curveMat = new THREE.LineBasicMaterial({ color: isDark ? 0x60a5fa : 0x2563eb });
+                    const g = new THREE.BufferGeometry().setFromPoints(pts);
+                    state.modelGroup.add(new THREE.Line(g, curveMat));
+                    primCount++;
                 }
             }
         });
     }
 
-    // 3. Update Floating Info Metrics
-    const vertCount = modelData.vertices.length;
-    els.infoVertices.textContent = vertCount;
-    els.infoPrimitives.textContent = primitiveCount;
+    // HUD
+    els.infoV.textContent = data.vertices.length;
+    els.infoP.textContent = primCount;
 
-    // Calculate Bounding Box dimensions
-    if (vertCount > 0) {
+    if (data.vertices.length > 0) {
         const box = new THREE.Box3().setFromObject(state.modelGroup);
-        const size = new THREE.Vector3();
-        box.getSize(size);
-        els.infoBounds.textContent = `${size.x.toFixed(1)} x ${size.y.toFixed(1)} x ${size.z.toFixed(1)}`;
-        
-        // Auto-center camera to fit model nicely
-        const center = new THREE.Vector3();
-        box.getCenter(center);
-        
-        // Adjust control target
-        state.controls.target.copy(center);
-        
-        // Set camera position safely out
-        const maxDim = Math.max(size.x, size.y, size.z);
-        if (maxDim > 0) {
-            state.camera.position.set(center.x + maxDim * 1.5, center.y + maxDim * 1.5, center.z + maxDim * 2.0);
+        const sz = new THREE.Vector3();
+        box.getSize(sz);
+        els.infoB.textContent = `${sz.x.toFixed(1)} × ${sz.y.toFixed(1)} × ${sz.z.toFixed(1)}`;
+
+        if (autoFrame) {
+            const center = new THREE.Vector3();
+            box.getCenter(center);
+            state.controls.target.copy(center);
+            const maxD = Math.max(sz.x, sz.y, sz.z, 1);
+            const cam = getCamera();
+            if (state.ortho) {
+                const baseFrustum = 15;
+                state.orthoCamera.zoom = baseFrustum / (maxD * 1.2);
+                state.orthoCamera.position.set(center.x + maxD * 1.4, center.y + maxD * 1.2, center.z + maxD * 1.8);
+                state.orthoCamera.updateProjectionMatrix();
+            } else {
+                state.perspCamera.position.set(center.x + maxD * 1.4, center.y + maxD * 1.2, center.z + maxD * 1.8);
+            }
+            state.controls.update();
         }
-        state.controls.update();
     } else {
-        els.infoBounds.textContent = "0.0 x 0.0";
+        els.infoB.textContent = '—';
     }
 }
 
-/* ==========================================================================
-   Tabs Management (Multiple Geometries)
-   ========================================================================== */
+/* =====================================================================
+   TABS AND VERSIONS MANAGEMENT
+   ===================================================================== */
+function formatDateTime(date) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const d = date.getDate().toString().padStart(2, '0');
+    const m = months[date.getMonth()];
+    const hrs = date.getHours().toString().padStart(2, '0');
+    const mins = date.getMinutes().toString().padStart(2, '0');
+    return `${d} ${m} | ${hrs}:${mins}`;
+}
+
 function addTab(name, data) {
-    const tabId = 'tab_' + Date.now();
-    state.tabs.push({ id: tabId, name, data });
-    
-    // Auto switch to new tab
-    switchTab(tabId);
-    
-    // Hide onboarding if visible
+    const versionId = 'ver_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    const newVersion = {
+        id: versionId,
+        data: data,
+        timestamp: new Date()
+    };
+
+    let tab = state.tabs.find(t => t.name === name);
+
+    if (tab) {
+        // Prevent duplicate updates if data is identical to the active version's data
+        const activeVer = tab.versions.find(v => v.id === tab.activeVersionId);
+        if (activeVer && JSON.stringify(activeVer.data) === JSON.stringify(data)) {
+            // If it is identical, just make sure we switch to this tab and return
+            switchTab(tab.id, false);
+            return;
+        }
+        tab.versions.push(newVersion);
+        tab.activeVersionId = versionId;
+        switchTab(tab.id, false); // Switch tab, but KEEP camera stable (no autoframe)
+        toast(`Added V:${tab.versions.length} to "${name}"`, 'success');
+    } else {
+        const tabId = 'tab_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        tab = {
+            id: tabId,
+            name: name,
+            versions: [newVersion],
+            activeVersionId: versionId
+        };
+        state.tabs.push(tab);
+        switchTab(tabId, true); // Auto-frame ONLY on initial loading of new tab!
+        toast(`New design: "${name}"`, 'success');
+    }
+
     if (state.tabs.length > 0) {
-        els.onboardingView.style.opacity = '0';
-        setTimeout(() => { els.onboardingView.style.display = 'none'; }, 250);
+        els.onboarding.style.opacity = '0';
+        setTimeout(() => { els.onboarding.style.display = 'none'; }, 200);
+    }
+    updateTabsUI();
+    updateVersionsUI();
+}
+
+function switchTab(id, autoFrame = false) {
+    const tab = state.tabs.find(t => t.id === id);
+    if (!tab) return;
+    state.activeTabId = id;
+    
+    const activeVersion = tab.versions.find(v => v.id === tab.activeVersionId);
+    if (activeVersion) {
+        renderModel(activeVersion.data, autoFrame);
+        els.json.value = JSON.stringify(activeVersion.data, null, 2);
+        renderParams(activeVersion.data.parameters);
     }
     
     updateTabsUI();
+    updateVersionsUI();
 }
 
-function switchTab(tabId) {
-    const tab = state.tabs.find(t => t.id === tabId);
+function switchVersion(versionId) {
+    const tab = state.tabs.find(t => t.id === state.activeTabId);
     if (!tab) return;
     
-    state.activeTabId = tabId;
-    
-    // 1. Render in 3D
-    renderModel(tab.data);
-    
-    // 2. Load JSON into inspector
-    els.jsonViewer.value = JSON.stringify(tab.data, null, 2);
-    
-    // 3. Render Parameters table
-    renderParameters(tab.data.parameters);
-    
-    // Update active state in list
-    updateTabsUI();
+    tab.activeVersionId = versionId;
+    const version = tab.versions.find(v => v.id === versionId);
+    if (version) {
+        renderModel(version.data, false); // Keep camera stable (no autoframe)
+        els.json.value = JSON.stringify(version.data, null, 2);
+        renderParams(version.data.parameters);
+    }
+    updateVersionsUI();
 }
 
-function closeTab(tabId, event) {
-    if (event) event.stopPropagation(); // Avoid triggering tab switch on close click
-    
-    const index = state.tabs.findIndex(t => t.id === tabId);
-    if (index === -1) return;
-    
-    state.tabs.splice(index, 1);
-    
-    if (state.tabs.length === 0) {
-        // Show onboarding
+function closeTab(id, e) {
+    if (e) e.stopPropagation();
+    const idx = state.tabs.findIndex(t => t.id === id);
+    if (idx === -1) return;
+    state.tabs.splice(idx, 1);
+
+    if (!state.tabs.length) {
         state.activeTabId = null;
-        els.onboardingView.style.display = 'flex';
-        setTimeout(() => { els.onboardingView.style.opacity = '1'; }, 50);
-        
-        // Clear 3D canvas
-        while(state.modelGroup.children.length > 0){
-            state.modelGroup.remove(state.modelGroup.children[0]);
-        }
-        els.jsonViewer.value = '';
-        els.infoVertices.textContent = '0';
-        els.infoPrimitives.textContent = '0';
-        els.infoBounds.textContent = '0.0 x 0.0';
-        renderParameters(null);
-    } else if (state.activeTabId === tabId) {
-        // Switch to adjacent tab
-        const nextActiveIndex = Math.max(0, index - 1);
-        switchTab(state.tabs[nextActiveIndex].id);
+        els.onboarding.style.display = 'flex';
+        setTimeout(() => { els.onboarding.style.opacity = '1'; }, 30);
+        while (state.modelGroup.children.length) state.modelGroup.remove(state.modelGroup.children[0]);
+        els.json.value = '';
+        els.infoV.textContent = '0';
+        els.infoP.textContent = '0';
+        els.infoB.textContent = '—';
+        renderParams(null);
+    } else if (state.activeTabId === id) {
+        switchTab(state.tabs[Math.max(0, idx - 1)].id, false);
     }
-    
     updateTabsUI();
+    updateVersionsUI();
 }
 
 function updateTabsUI() {
-    els.tabsContainer.innerHTML = '';
-    
-    state.tabs.forEach(tab => {
-        const isActive = tab.id === state.activeTabId;
-        const tabEl = document.createElement('div');
-        tabEl.className = `tab-item ${isActive ? 'active' : ''}`;
-        tabEl.onclick = () => switchTab(tab.id);
-        
-        tabEl.innerHTML = `
-            <span class="tab-name" title="${tab.name}"><i class="fa-solid fa-cube"></i> ${tab.name}</span>
-            <button class="tab-close" onclick="closeTab('${tab.id}', event)"><i class="fa-solid fa-xmark"></i></button>
-        `;
-        
-        els.tabsContainer.appendChild(tabEl);
+    els.tabs.innerHTML = '';
+    state.tabs.forEach(t => {
+        const el = document.createElement('div');
+        el.className = `tab-item${t.id === state.activeTabId ? ' active' : ''}`;
+        el.onclick = () => switchTab(t.id, false);
+        el.innerHTML = `
+            <span class="tab-name"><i class="fa-solid fa-cube" style="font-size:10px;opacity:0.5"></i> ${t.name}</span>
+            <button class="tab-close" onclick="closeTab('${t.id}',event)"><i class="fa-solid fa-xmark"></i></button>`;
+        els.tabs.appendChild(el);
     });
 }
 
-function renderParameters(parameters) {
-    els.paramsContainer.innerHTML = '';
-    
-    if (!parameters || Object.keys(parameters).length === 0) {
-        els.paramsContainer.innerHTML = '<div class="empty-state">No parameters defined.</div>';
+function updateVersionsUI() {
+    els.versionsList.innerHTML = '';
+    const tab = state.tabs.find(t => t.id === state.activeTabId);
+    if (!tab) {
+        els.versionsList.innerHTML = '<div class="empty-state">No design selected</div>';
         return;
     }
-    
-    Object.keys(parameters).forEach(key => {
-        const val = parameters[key];
-        const badge = document.createElement('div');
-        badge.className = 'param-badge';
-        badge.innerHTML = `
-            <span class="param-name">${key}</span>
-            <span class="param-val">${val}</span>
+
+    tab.versions.forEach((v, index) => {
+        const el = document.createElement('div');
+        el.className = `version-item${v.id === tab.activeVersionId ? ' active' : ''}`;
+        el.onclick = () => switchVersion(v.id);
+        
+        const verLabel = `V : ${index + 1} ; ${formatDateTime(v.timestamp)}`;
+        
+        el.innerHTML = `
+            <span class="version-name">${verLabel}</span>
+            ${v.id === tab.activeVersionId ? '<span class="version-active-tag">Active</span>' : ''}
         `;
-        els.paramsContainer.appendChild(badge);
+        els.versionsList.appendChild(el);
     });
 }
 
-/* ==========================================================================
-   UI Interactions & Controls
-   ========================================================================== */
-function initUIControls() {
-    // Onboarding Button
-    els.btnLoadDemo.onclick = () => {
-        addTab("Parametric Bracket", GEO_EXAMPLES.Parametric_Bracket);
-        showToast("Demo design loaded successfully", "success");
-    };
-    
-    // Clear all tabs
-    els.btnClearTabs.onclick = () => {
-        state.tabs = [];
-        state.activeTabId = null;
-        els.tabsContainer.innerHTML = '';
-        els.onboardingView.style.display = 'flex';
-        els.onboardingView.style.opacity = '1';
-        while(state.modelGroup.children.length > 0) {
-            state.modelGroup.remove(state.modelGroup.children[0]);
-        }
-        els.jsonViewer.value = '';
-        renderParameters(null);
-        showToast("All tabs cleared", "info");
-    };
-
-    // Copy geometri JSON
-    els.btnCopyCode.onclick = () => {
-        const code = els.jsonViewer.value;
-        if (!code) return;
-        navigator.clipboard.writeText(code).then(() => {
-            showToast("JSON code copied to clipboard", "success");
-        }).catch(() => {
-            showToast("Failed to copy code", "error");
-        });
-    };
-
-    // Copy AI Prompt
-    els.btnCopyPrompt.onclick = () => {
-        const promptText = `Teaching prompt for writing geometri format:
----
-You are a geometry generation AI. Output ONLY a raw JSON string adhering to the "geometri" schema. Do not wrap it in markdown or write conversational text.
-
-Schema Definition:
-{
-  "metadata": { "name": "Model Name", "version": "1.0.0", "description": "Short description" },
-  "parameters": { "param_name": float_value },
-  "vertices": [ { "id": "v0", "x": float_or_formula_string, "y": float_or_formula, "z": float_or_formula } ],
-  "primitives": [
-    { "type": "line", "start": "start_vertex_id", "end": "end_vertex_id" },
-    { "type": "circle", "center": "center_vertex_id", "radius": float_or_formula, "normal": [x, y, z] },
-    { "type": "bezier", "control_points": ["v_start", "v_ctrl1", "v_ctrl2", "v_end"] }
-  ]
+function renderParams(params) {
+    els.params.innerHTML = '';
+    if (!params || !Object.keys(params).length) {
+        els.params.innerHTML = '<div class="empty-state">No parameters</div>';
+        return;
+    }
+    Object.entries(params).forEach(([k, v]) => {
+        const d = document.createElement('div');
+        d.className = 'param-badge';
+        d.innerHTML = `<span class="param-name">${k}</span><span class="param-val">${v}</span>`;
+        els.params.appendChild(d);
+    });
 }
 
-To display the design, encode this JSON and append it to the URL like this:
-https://atlas55kk.github.io/GEO/?data=<URL_Encoded_JSON_String>
----`;
-        navigator.clipboard.writeText(promptText).then(() => {
-            showToast("AI Prompt copied to clipboard", "success");
-        });
+/* =====================================================================
+   UI CONTROLS
+   ===================================================================== */
+function initControls() {
+    // Collapsible Panels Toggle (Accordion)
+    if (state.showVersionsPanel) {
+        els.versionsPanel.classList.remove('collapsed');
+        els.btnToggleVersions.classList.add('active');
+    } else {
+        els.versionsPanel.classList.add('collapsed');
+        els.btnToggleVersions.classList.remove('active');
+    }
+
+    const toggleVersions = () => {
+        state.showVersionsPanel = !state.showVersionsPanel;
+        els.versionsPanel.classList.toggle('collapsed', !state.showVersionsPanel);
+        els.btnToggleVersions.classList.toggle('active', state.showVersionsPanel);
+    };
+
+    els.btnToggleVersions.onclick = toggleVersions;
+    els.headerVersions.onclick = toggleVersions;
+
+    // Toggle Source Code panel
+    els.headerCode.onclick = (e) => {
+        // Prevent copy button click from toggling panel
+        if (e.target.closest('#btn-copy-code') || e.target.closest('.icon-btn')) return;
+        els.panelCode.classList.toggle('collapsed');
+    };
+
+    // Demo Loading
+    els.btnDemo.onclick = () => {
+        addTab('Parametric Bracket', GEO_EXAMPLES.Parametric_Bracket);
+    };
+
+    // Clear Versions
+    els.btnClearVersions.onclick = () => {
+        const tab = state.tabs.find(t => t.id === state.activeTabId);
+        if (!tab) return;
+        
+        const activeVer = tab.versions.find(v => v.id === tab.activeVersionId);
+        if (activeVer) {
+            tab.versions = [activeVer];
+            updateVersionsUI();
+            toast('Cleared version history, kept active design', 'info');
+        }
+    };
+
+    // Copy JSON
+    els.btnCopy.onclick = () => {
+        if (!els.json.value) return;
+        navigator.clipboard.writeText(els.json.value).then(() => toast('Copied JSON source', 'success'));
+    };
+
+    // Copy AI prompt
+    els.btnPrompt.onclick = () => {
+        const p = `You are a geometry generation assistant. When asked to design a structure, output ONLY raw JSON in the "geometri" schema. No markdown, no extra text.\n\nSchema:\n{\n  "metadata": { "name": "Name", "version": "1.0.0", "description": "..." },\n  "parameters": { "param": float },\n  "vertices": [ { "id": "v0", "x": float_or_formula, "y": ..., "z": ... } ],\n  "primitives": [\n    { "type": "line", "start": "v_id", "end": "v_id" },\n    { "type": "circle", "center": "v_id", "radius": float_or_formula, "normal": [x,y,z] },\n    { "type": "bezier", "control_points": ["v0","v1","v2","v3"] }\n  ]\n}\n\nTo visualize, encode the JSON and link:\nhttps://atlas55kk.github.io/GEO/?data=<URL_Encoded_JSON>&tab=<Name>`;
+        navigator.clipboard.writeText(p).then(() => toast('AI prompt template copied', 'success'));
     };
 
     // Grid Toggle
     els.ctrlGrid.onclick = () => {
         state.showGrid = !state.showGrid;
-        state.gridHelper.visible = state.showGrid;
+        state.gridGroup.visible = state.showGrid;
         els.ctrlGrid.classList.toggle('active', state.showGrid);
-        showToast(`Grid ${state.showGrid ? 'enabled' : 'disabled'}`, 'info');
     };
 
     // Axes Toggle
     els.ctrlAxes.onclick = () => {
         state.showAxes = !state.showAxes;
-        state.axesHelper.visible = state.showAxes;
+        state.axesGroup.visible = state.showAxes;
         els.ctrlAxes.classList.toggle('active', state.showAxes);
-        showToast(`Axes ${state.showAxes ? 'enabled' : 'disabled'}`, 'info');
+        [els.axisX, els.axisY, els.axisZ].forEach(l => {
+            if (l) l.style.display = state.showAxes ? '' : 'none';
+        });
     };
 
-    // Reset Camera
+    // Reset Camera / Auto-frame view
     els.ctrlCamera.onclick = () => {
-        state.controls.reset();
-        showToast("Camera view reset", "info");
+        if (state.activeTabId) {
+            const tab = state.tabs.find(t => t.id === state.activeTabId);
+            if (tab) {
+                const activeVer = tab.versions.find(v => v.id === tab.activeVersionId);
+                if (activeVer) {
+                    renderModel(activeVer.data, true); // Force auto-frame on demand
+                    toast('View reset to model bounds', 'info');
+                    return;
+                }
+            }
+        }
+        // Default camera position fallback
+        const cam = getCamera();
+        cam.position.set(18, 14, 22);
+        state.controls.target.set(0, 0, 0);
+        state.controls.update();
+        toast('View reset to origin', 'info');
     };
 
-    // Theme Toggle
+    // Ortho / Perspective toggle
+    els.ctrlOrtho.onclick = () => {
+        state.ortho = !state.ortho;
+        els.ctrlOrtho.classList.toggle('active', state.ortho);
+
+        // Seamless transition without jumping sizes/angles
+        syncCameras();
+
+        state.controls.object = getCamera();
+        state.controls.update();
+    };
+
+    // Theme toggle
     els.ctrlTheme.onclick = () => {
         state.theme = state.theme === 'dark' ? 'light' : 'dark';
         document.body.setAttribute('data-theme', state.theme);
-        
-        // Update Three Scene background
-        state.scene.background = new THREE.Color(state.theme === 'dark' ? 0x08090c : 0xf0f0f0);
-        
-        // Update grid helper colors
-        state.scene.remove(state.gridHelper);
-        state.gridHelper = new THREE.GridHelper(30, 30, state.theme === 'dark' ? 0x9333ea : 0x7e22ce, state.theme === 'dark' ? 0x1e293b : 0xcbd5e1);
-        state.scene.add(state.gridHelper);
-        
-        // Redraw current active tab to adjust vertex colors
+
+        state.scene.background = new THREE.Color(state.theme === 'dark' ? 0x0a0e17 : 0xf1f5f9);
+        buildGrid();
+
         if (state.activeTabId) {
             const tab = state.tabs.find(t => t.id === state.activeTabId);
-            if (tab) renderModel(tab.data);
+            if (tab) {
+                const activeVer = tab.versions.find(v => v.id === tab.activeVersionId);
+                if (activeVer) renderModel(activeVer.data, false); // Keep camera stable
+            }
         }
-
-        const icon = els.ctrlTheme.querySelector('i');
-        icon.className = state.theme === 'dark' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
-        showToast(`Theme switched to ${state.theme} mode`, 'info');
     };
 }
 
-/* ==========================================================================
-   Toast Notifications
-   ========================================================================== */
-function showToast(message, type = 'info') {
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    
-    let iconClass = 'fa-circle-info';
-    if (type === 'success') iconClass = 'fa-circle-check';
-    if (type === 'error') iconClass = 'fa-triangle-exclamation';
-    
-    toast.innerHTML = `
-        <i class="fa-solid ${iconClass}"></i>
-        <span>${message}</span>
-    `;
-    
-    els.toastContainer.appendChild(toast);
-    
-    // Auto-destruct after 3 seconds
-    setTimeout(() => {
-        toast.style.opacity = '0';
-        setTimeout(() => { toast.remove(); }, 300);
-    }, 3000);
+/* =====================================================================
+   TOASTS
+   ===================================================================== */
+function toast(msg, type = 'info') {
+    if (!els.toasts) return;
+    const t = document.createElement('div');
+    t.className = `toast ${type}`;
+    const icons = { info: 'fa-circle-info', success: 'fa-circle-check', error: 'fa-triangle-exclamation' };
+    t.innerHTML = `<i class="fa-solid ${icons[type] || icons.info}"></i><span>${msg}</span>`;
+    els.toasts.appendChild(t);
+    setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 200); }, 2500);
 }
 
-/* ==========================================================================
-   External Loading (URL Parameter Parsing & Hot Reload Endpoint)
-   ========================================================================== */
-function checkUrlParameters() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const dataParam = urlParams.get('data');
-    if (!dataParam) return;
-    
+/* =====================================================================
+   URL LOADING
+   ===================================================================== */
+function checkUrl() {
+    const p = new URLSearchParams(window.location.search);
+    const d = p.get('data');
+    if (!d) return;
+
     try {
-        let jsonString = '';
-        
-        if (dataParam.trim().startsWith('{')) {
-            // Raw JSON string
-            jsonString = decodeURIComponent(dataParam);
-        } else {
-            // Attempt Base64 decode
-            try {
-                // Handle url-safe base64 differences
-                const cleanedBase64 = dataParam.replace(/-/g, '+').replace(/_/g, '/');
-                jsonString = atob(cleanedBase64);
-            } catch (b64Error) {
-                // Fallback to basic URL decode if not valid base64
-                jsonString = decodeURIComponent(dataParam);
-            }
-        }
-        
-        const parsedData = JSON.parse(jsonString);
-        const tabName = urlParams.get('tab') || parsedData.metadata?.name || "AI_Model";
-        
-        // Load the model
-        addTab(tabName, parsedData);
-        showToast(`Successfully loaded model "${tabName}" from URL`, "success");
-        
-    } catch (err) {
-        console.error("GEO URL Parser: Failed to parse query parameter data", err);
-        showToast("Failed to parse geometric model from URL link", "error");
+        let json = d.trim().startsWith('{')
+            ? decodeURIComponent(d)
+            : atob(d.replace(/-/g, '+').replace(/_/g, '/'));
+        const parsed = JSON.parse(json);
+        addTab(p.get('tab') || parsed.metadata?.name || 'AI Model', parsed);
+    } catch (e) {
+        console.error('GEO: URL parse error', e);
+        toast('Failed to load from URL', 'error');
     }
 }
 
-// Global hook for local python server or local agents to trigger update
-window.loadGeometriModel = function(jsonData, tabName = "Live_Update") {
+/* =====================================================================
+   GLOBAL API (for local AI agents)
+   ===================================================================== */
+window.loadGeometriModel = function(jsonData, tabName = 'Live_Update') {
     try {
         const parsed = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
-        
-        // Check if tab with this exact name already exists. If so, update it instead of making a new one
-        const existingTab = state.tabs.find(t => t.name === tabName);
-        if (existingTab) {
-            existingTab.data = parsed;
-            if (state.activeTabId === existingTab.id) {
-                // If it's the active view, render it
-                renderModel(parsed);
-                els.jsonViewer.value = JSON.stringify(parsed, null, 2);
-                renderParameters(parsed.parameters);
-            } else {
-                switchTab(existingTab.id);
-            }
-            showToast(`Updated active design tab "${tabName}"`, "success");
-        } else {
-            // Open a new tab
-            addTab(tabName, parsed);
-            showToast(`Created new design tab "${tabName}"`, "success");
-        }
+        addTab(tabName, parsed);
     } catch (e) {
-        console.error("GEO API: Failed to load incoming JSON", e);
-        showToast("Error updating model from local API", "error");
+        console.error('GEO API error', e);
+        toast('Failed to load model', 'error');
     }
 };
 
-/* ==========================================================================
-   Local Offline SSE Listener (For launcher.py)
-   ========================================================================== */
-function initSseListener() {
-    // If we are running in the pywebview local environment or localhost, listen for SSE events
-    // We check if hostname is localhost or 127.0.0.1
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        const eventSource = new EventSource('/events');
-        
-        eventSource.onopen = function() {
-            els.connectionStatus.classList.add('connected');
-            els.connectionStatus.querySelector('.status-label').textContent = 'Connected';
-            showToast("Connected to local AI launcher", "success");
-        };
-        
-        eventSource.onerror = function() {
-            els.connectionStatus.classList.remove('connected');
-            els.connectionStatus.querySelector('.status-label').textContent = 'Offline';
-        };
-        
-        eventSource.onmessage = function(event) {
-            try {
-                const payload = JSON.parse(event.data);
-                if (payload && payload.data) {
-                    window.loadGeometriModel(payload.data, payload.tab || "Local_Design");
-                }
-            } catch (e) {
-                console.error("GEO SSE: Failed to process message", e);
-            }
-        };
-    }
+/* =====================================================================
+   SSE LISTENER (local launcher)
+   ===================================================================== */
+function initSSE() {
+    if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') return;
+
+    const es = new EventSource('/events');
+    es.onopen = () => {
+        if (els.status) {
+            els.status.classList.add('connected');
+            els.status.querySelector('.status-label').textContent = 'Live';
+        }
+        toast('Connected to local AI', 'success');
+    };
+    es.onerror = () => {
+        if (els.status) {
+            els.status.classList.remove('connected');
+            els.status.querySelector('.status-label').textContent = 'Offline';
+        }
+    };
+    es.onmessage = (e) => {
+        try {
+            const payload = JSON.parse(e.data);
+            if (payload?.data) window.loadGeometriModel(payload.data, payload.tab || 'Local_Design');
+        } catch {}
+    };
 }
 
-/* ==========================================================================
-   Page Entry Point
-   ========================================================================== */
+/* =====================================================================
+   INIT
+   ===================================================================== */
 window.onload = () => {
     initThree();
-    initUIControls();
-    checkUrlParameters();
-    initSseListener();
+    initControls();
+    checkUrl();
+    initSSE();
 };
