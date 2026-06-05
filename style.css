@@ -4,28 +4,28 @@
    ========================================================================== */
 
 :root {
-    /* Slate Engineering Palette */
-    --bg-deep:       #0a0e17;
-    --bg-primary:    #0f1520;
-    --bg-secondary:  #151c2c;
-    --bg-elevated:   #1a2236;
-    --bg-surface:    #1f293d;
+    /* Obsidian CAD Engineering Palette (Zinc/Neutrals) */
+    --bg-deep:       #0a0a0c;
+    --bg-primary:    #121214;
+    --bg-secondary:  #18181b;
+    --bg-elevated:   #202024;
+    --bg-surface:    #2c2c30;
 
-    --border:        rgba(56, 68, 100, 0.35);
-    --border-subtle: rgba(56, 68, 100, 0.2);
-    --border-active: rgba(96, 165, 250, 0.5);
+    --border:        rgba(255, 255, 255, 0.08);
+    --border-subtle: rgba(255, 255, 255, 0.04);
+    --border-active: #0ea5e9;
 
-    --accent:        #60a5fa;
-    --accent-dim:    rgba(96, 165, 250, 0.12);
-    --accent-bright: #93c5fd;
-    --success:       #34d399;
-    --error:         #f87171;
-    --warning:       #fbbf24;
+    --accent:        #0ea5e9; /* Professional Ice-Blue Accent */
+    --accent-dim:    rgba(14, 165, 233, 0.12);
+    --accent-bright: #38bdf8;
+    --success:       #10b981;
+    --error:         #ef4444;
+    --warning:       #f59e0b;
 
-    --text:          #e2e8f0;
-    --text-secondary:#94a3b8;
-    --text-muted:    #64748b;
-    --text-dim:      #475569;
+    --text:          #f4f4f5;
+    --text-secondary:#a1a1aa;
+    --text-muted:    #71717a;
+    --text-dim:      #52525b;
 
     --axis-x:        #ef4444;
     --axis-y:        #22c55e;
@@ -33,35 +33,36 @@
 
     --sidebar-w:     340px;
     --toolbar-w:     40px;
-    --radius:        6px;
-    --radius-sm:     3px;
+    --radius:        4px; /* Crisp engineering rounded corners */
+    --radius-sm:     2px;
 
     --font:          'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     --mono:          'JetBrains Mono', 'Fira Code', monospace;
 
-    --fast:          0.1s ease;
-    --normal:        0.18s ease;
+    --fast:          0.08s ease;
+    --normal:        0.15s ease;
 }
 
 [data-theme="light"] {
-    --bg-deep:       #f1f5f9;
-    --bg-primary:    #f8fafc;
+    /* Alabaster CAD Studio Palette */
+    --bg-deep:       #f4f4f5;
+    --bg-primary:    #fafafa;
     --bg-secondary:  #ffffff;
-    --bg-elevated:   #f1f5f9;
-    --bg-surface:    #e2e8f0;
+    --bg-elevated:   #f4f4f5;
+    --bg-surface:    #e4e4e7;
 
-    --border:        rgba(148, 163, 184, 0.4);
-    --border-subtle: rgba(148, 163, 184, 0.2);
-    --border-active: rgba(37, 99, 235, 0.5);
+    --border:        rgba(9, 9, 11, 0.08);
+    --border-subtle: rgba(9, 9, 11, 0.04);
+    --border-active: #0284c7;
 
-    --accent:        #2563eb;
-    --accent-dim:    rgba(37, 99, 235, 0.08);
-    --accent-bright: #3b82f6;
+    --accent:        #0284c7;
+    --accent-dim:    rgba(2, 132, 199, 0.08);
+    --accent-bright: #0ea5e9;
 
-    --text:          #0f172a;
-    --text-secondary:#334155;
-    --text-muted:    #64748b;
-    --text-dim:      #94a3b8;
+    --text:          #09090b;
+    --text-secondary:#4b5563;
+    --text-muted:    #9ca3af;
+    --text-dim:      #d1d5db;
 }
 
 /* === Resets === */
@@ -746,7 +747,7 @@ html, body {
 .onboarding {
     position: absolute;
     inset: 0;
-    background: rgba(10, 14, 23, 0.92);
+    background: rgba(10, 10, 12, 0.96);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -764,7 +765,7 @@ html, body {
 
 .onboarding-logo {
     color: var(--accent);
-    opacity: 0.7;
+    opacity: 0.9;
 }
 
 .onboarding-card h2 {
@@ -783,7 +784,7 @@ html, body {
     margin-top: 4px;
     background: var(--accent);
     border: none;
-    color: #0f172a;
+    color: #ffffff;
     padding: 9px 22px;
     border-radius: var(--radius);
     font-weight: 700;

@@ -75,7 +75,7 @@ function initThree() {
 
     // Scene
     state.scene = new THREE.Scene();
-    state.scene.background = new THREE.Color(0x0a0e17);
+    state.scene.background = new THREE.Color(0x0a0a0c);
 
     // Perspective Camera
     state.perspCamera = new THREE.PerspectiveCamera(40, w / h, 0.1, 2000);
@@ -173,16 +173,16 @@ function buildGrid() {
 
     // Major grid (every 5 units)
     const majorGrid = new THREE.GridHelper(50, 10,
-        isDark ? 0x2a3654 : 0xb0bec5,
-        isDark ? 0x2a3654 : 0xb0bec5
+        isDark ? 0x2c2c30 : 0xd4d4d8,
+        isDark ? 0x2c2c30 : 0xd4d4d8
     );
     majorGrid.position.y = -0.01;
     state.gridGroup.add(majorGrid);
 
     // Minor grid (every 1 unit)
     const minorGrid = new THREE.GridHelper(50, 50,
-        isDark ? 0x172033 : 0xdce3ea,
-        isDark ? 0x172033 : 0xdce3ea
+        isDark ? 0x18181b : 0xe4e4e7,
+        isDark ? 0x18181b : 0xe4e4e7
     );
     minorGrid.position.y = -0.02;
     state.gridGroup.add(minorGrid);
@@ -307,7 +307,7 @@ function renderModel(data, autoFrame = false) {
 
     // Vertices
     const dotGeo = new THREE.SphereGeometry(0.06, 12, 12);
-    const dotMat = new THREE.MeshBasicMaterial({ color: isDark ? 0x60a5fa : 0x2563eb });
+    const dotMat = new THREE.MeshBasicMaterial({ color: isDark ? 0x0ea5e9 : 0x0284c7 });
 
     data.vertices.forEach(v => {
         const pos = new THREE.Vector3(
@@ -324,7 +324,7 @@ function renderModel(data, autoFrame = false) {
 
     // Edge material
     const edgeMat = new THREE.LineBasicMaterial({
-        color: isDark ? 0xcbd5e1 : 0x334155
+        color: isDark ? 0xe4e4e7 : 0x27272a
     });
 
     let primCount = 0;
@@ -371,7 +371,7 @@ function renderModel(data, autoFrame = false) {
                             mt*mt*mt*p0.z + 3*mt*mt*t*p1.z + 3*mt*t*t*p2.z + t*t*t*p3.z
                         ));
                     }
-                    const curveMat = new THREE.LineBasicMaterial({ color: isDark ? 0x60a5fa : 0x2563eb });
+                    const curveMat = new THREE.LineBasicMaterial({ color: isDark ? 0x0ea5e9 : 0x0284c7 });
                     const g = new THREE.BufferGeometry().setFromPoints(pts);
                     state.modelGroup.add(new THREE.Line(g, curveMat));
                     primCount++;
@@ -625,6 +625,14 @@ function initControls() {
         addTab('Parametric Bracket', GEO_EXAMPLES.Parametric_Bracket);
     };
 
+    // Gears Demo Loading
+    const btnGears = $('btn-load-gears');
+    if (btnGears) {
+        btnGears.onclick = () => {
+            addTab('3D Gears', GEO_EXAMPLES.ThreeD_Gears);
+        };
+    }
+
     // Clear Versions
     els.btnClearVersions.onclick = () => {
         const tab = state.tabs.find(t => t.id === state.activeTabId);
@@ -705,7 +713,7 @@ function initControls() {
         state.theme = state.theme === 'dark' ? 'light' : 'dark';
         document.body.setAttribute('data-theme', state.theme);
 
-        state.scene.background = new THREE.Color(state.theme === 'dark' ? 0x0a0e17 : 0xf1f5f9);
+        state.scene.background = new THREE.Color(state.theme === 'dark' ? 0x0a0a0c : 0xf4f4f5);
         buildGrid();
 
         if (state.activeTabId) {
