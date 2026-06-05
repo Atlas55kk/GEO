@@ -72,6 +72,17 @@ All key features were developed in a rapid, modular sequence of iterations:
   * [style.css](file:///d:/GEO/style.css) - Updated to neutral slate/zinc color tokens, fine high-precision borders, and sharp corner radii.
   * [app.js](file:///d:/GEO/app.js) - Synced Three.js canvas grids, backgrounds, and line elements.
 
+### Phase 6: Robust Parsing & Math Sandbox Security
+* **Milestone**: Bulletproofing the parser and math expression solver for AI generation.
+* **Key Achievements**:
+  * Implemented an operator-precedence space-aware tokenizer to support math expressions with spaces without corrupting list coordinate split boundaries.
+  * Enforced strict variable naming rules for parameter IDs (starting with a letter/underscore, alphanumeric only) and blocked conflicts with math keywords (`sin`, `cos`, `pi`) to prevent regular expression injection crashes.
+  * Patched the math evaluator to intercept invalid values (like division by zero `Infinity` or complex roots `NaN`) and default them to `0` to prevent WebGL viewport crashes.
+  * Added degenerate normal vector safeguards (defaulting `0 0 0` normals to `0 0 1`) and strict `b3`/`b4` Bezier primitives.
+* **Core Codebase**:
+  * [app.js](file:///d:/GEO/app.js) - Improved `evalExpr`, `parseGeoFormat` tokenizer, degenerate checks, and Bezier routing.
+  * [GEOMETRI_SPEC.md](file:///d:/GEO/GEOMETRI_SPEC.md) - Documented security and syntax rules for generating AI agents.
+
 ---
 
 ## 🛠️ Architecture & Technical Decoupling

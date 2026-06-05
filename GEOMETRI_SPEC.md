@@ -33,7 +33,7 @@ Provides model identification and descriptors. Multi-word strings are fully pres
 ### Parameters
 Declares algebraic variables for coordinate formulas. Parameters are evaluated sequentially.
 * **Syntax**: `p <id> <expression>`
-* **Arguments**: `<id>` (variable name), `<expression>` (mathematical expression).
+* **Arguments**: `<id>` (variable name matching `/^[a-zA-Z_][a-zA-Z0-9_]*$/`; cannot be a reserved math keyword like `sin` or `pi`), `<expression>` (mathematical expression).
 * **Example**:
   ```text
   p width 12.0
@@ -82,3 +82,5 @@ To prevent parsing errors or viewport crashes:
 3. **Math Sandbox**: Expressions are validated against a whitelist of characters: digits, standard operators (`+`, `-`, `*`, `/`, `(`, `)`, `,`, `.`), and math keywords (`sin`, `cos`, `tan`, `sqrt`, `pow`, `abs`, `pi`). Any other characters block evaluation, securing the runtime.
 4. **Degenerate Normal Safeguard**: Normal vectors for circles, arcs, and ellipses must not equal `0 0 0`. If a degenerate normal vector is parsed, the visualizer automatically defaults it to `[0, 0, 1]` (along the Z-axis) to prevent mathematical undefined orientation and WebGL render crashes.
 5. **Arc Orientation Direction**: Arcs are always drawn counter-clockwise relative to the direction the normal vector points (conforming to the Right-Hand Rule).
+6. **Parameter Naming Rules**: Parameter identifiers (`p <id> <expression>`) must be valid variable names. They must start with a letter or underscore (`[a-zA-Z_]`) and contain only alphanumeric characters or underscores (`[a-zA-Z0-9_]`). They **must not** conflict with reserved mathematical keywords (`sin`, `cos`, `tan`, `sqrt`, `pow`, `abs`, `pi`). Parameter IDs violating these rules are skipped to prevent regular expression parsing crashes during substitution.
+7. **Mathematical Domain Safety**: If an expression evaluates to division by zero (`Infinity`) or an undefined real number (`NaN` from complex roots like `sqrt(-1)`), the parser intercepts it and defaults the result to `0`, preventing invalid values from propagating to Three.js coordinates.
