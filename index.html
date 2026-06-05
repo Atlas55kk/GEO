@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GEO // Geometric Wireframe Visualizer</title>
+    <!-- Google Fonts: Outfit (UI) and Fira Code (Code) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for modern icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom styling -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Panel -->
+        <aside class="sidebar">
+            <header class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon"><i class="fa-solid fa-compass-drafting"></i></span>
+                    <span class="logo-text">GEO<span class="logo-sub">.visual</span></span>
+                </div>
+                <div class="status-indicator" id="connection-status">
+                    <span class="status-dot"></span>
+                    <span class="status-label">Offline</span>
+                </div>
+            </header>
+
+            <!-- Tabs Manager -->
+            <section class="panel panel-tabs">
+                <div class="panel-header">
+                    <h3><i class="fa-solid fa-layer-group"></i> Active Designs</h3>
+                    <button id="btn-clear-tabs" class="icon-button" title="Clear all tabs"><i class="fa-solid fa-trash-can"></i></button>
+                </div>
+                <div class="tabs-list" id="tabs-container">
+                    <!-- Dynamic tabs will be injected here -->
+                </div>
+            </section>
+
+            <!-- Parameters Inspector -->
+            <section class="panel panel-params">
+                <div class="panel-header">
+                    <h3><i class="fa-solid fa-sliders"></i> Parameters</h3>
+                </div>
+                <div class="params-list" id="params-container">
+                    <div class="empty-state">No parameters defined.</div>
+                </div>
+            </section>
+
+            <!-- Code Inspector -->
+            <section class="panel panel-code">
+                <div class="panel-header">
+                    <h3><i class="fa-solid fa-code"></i> geometri JSON</h3>
+                    <div class="code-actions">
+                        <button id="btn-copy-code" class="text-button" title="Copy JSON"><i class="fa-solid fa-copy"></i> Copy</button>
+                    </div>
+                </div>
+                <div class="code-editor-wrapper">
+                    <textarea id="json-viewer" readonly placeholder="Parsed geometri JSON will appear here..."></textarea>
+                </div>
+            </section>
+
+            <!-- AI Prompt Generator -->
+            <section class="panel panel-prompt">
+                <div class="panel-header">
+                    <h3><i class="fa-solid fa-wand-magic-sparkles"></i> AI System Prompt</h3>
+                </div>
+                <div class="prompt-box">
+                    <p>Teach your AI how to generate models for GEO with one click.</p>
+                    <button id="btn-copy-prompt" class="action-button"><i class="fa-solid fa-clipboard"></i> Copy AI Prompt</button>
+                </div>
+            </section>
+        </aside>
+
+        <!-- Main Visualizer Area -->
+        <main class="viewport-container">
+            <!-- 3D Canvas -->
+            <div id="canvas-container"></div>
+
+            <!-- Floating Viewport Controls -->
+            <div class="viewport-controls">
+                <button id="ctrl-grid" class="control-btn active" title="Toggle Grid"><i class="fa-solid fa-grid-3x3"></i></button>
+                <button id="ctrl-axes" class="control-btn active" title="Toggle Axes"><i class="fa-solid fa-lines-leaning"></i></button>
+                <button id="ctrl-camera" class="control-btn" title="Reset Camera"><i class="fa-solid fa-arrows-to-eye"></i></button>
+                <div class="control-separator"></div>
+                <button id="ctrl-theme" class="control-btn" title="Toggle Dark/Light Mode"><i class="fa-solid fa-moon"></i></button>
+            </div>
+
+            <!-- Floating Info Panel -->
+            <div class="viewport-info" id="viewport-info-panel">
+                <div class="info-item">
+                    <span class="info-label">Vertices:</span>
+                    <span class="info-val" id="info-vertices">0</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Primitives:</span>
+                    <span class="info-val" id="info-primitives">0</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Bounds:</span>
+                    <span class="info-val" id="info-bounds">0.0 x 0.0</span>
+                </div>
+            </div>
+
+            <!-- Onboarding Overlay (Shown when empty) -->
+            <div class="onboarding-overlay" id="onboarding-view">
+                <div class="onboarding-card">
+                    <div class="onboarding-icon"><i class="fa-solid fa-cube"></i></div>
+                    <h2>Welcome to GEO</h2>
+                    <p>Visual representation engine for geometric wireframe models.</p>
+                    <div class="onboarding-actions">
+                        <button id="btn-load-demo" class="primary-button">Load Demo Design</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Toast Notification Area -->
+            <div class="toast-container" id="toast-container"></div>
+        </main>
+    </div>
+
+    <!-- Three.js and OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- Examples template source -->
+    <script src="examples.js"></script>
+    <!-- Application Logic -->
+    <script src="app.js"></script>
+</body>
+</html>
