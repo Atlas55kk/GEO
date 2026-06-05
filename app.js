@@ -340,18 +340,36 @@ function parseGeoFormat(text) {
         cleanLine = cleanLine.trim();
         if (cleanLine === '') return;
 
+        const isMeta = cleanLine.toLowerCase().startsWith('meta');
+        if (!isMeta) {
+            // Strip spaces around operators (+, *, /) inside expressions
+            cleanLine = cleanLine.replace(/\s*([\*\/])\s*/g, '$1');
+            cleanLine = cleanLine.replace(/\s*(\+)\s*/g, '$1');
+            
+            // Strip spaces around minus/subtraction operators safely:
+            // 1. Minus followed by space (binary subtraction or unary minus after operator)
+            cleanLine = cleanLine.replace(/([\*\/+\-])\s*-\s+/g, '$1-');
+            cleanLine = cleanLine.replace(/([\w\)])\s*-\s+/g, '$1-');
+            
+            // 2. Minus preceded by space (unary minus after operator, e.g. "* -1")
+            cleanLine = cleanLine.replace(/([\*\/+\-])\s+-/g, '$1-');
+        }
+
+        if (isMeta) {
+            const firstSpace = cleanLine.indexOf(' ');
+            const secondSpace = cleanLine.indexOf(' ', firstSpace + 1);
+            if (secondSpace !== -1) {
+                const key = cleanLine.substring(firstSpace + 1, secondSpace).toLowerCase();
+                const val = cleanLine.substring(secondSpace + 1).trim();
+                metadata[key] = val;
+            }
+            return;
+        }
+
         const tokens = cleanLine.split(/\s+/);
         const cmd = tokens[0].toLowerCase();
 
         switch (cmd) {
-            case 'meta': {
-                if (tokens.length >= 3) {
-                    const key = tokens[1].toLowerCase();
-                    const val = tokens.slice(2).join(' ');
-                    metadata[key] = val;
-                }
-                break;
-            }
             case 'p': {
                 if (tokens.length === 3) {
                     const id = tokens[1];
@@ -441,14 +459,31 @@ function parseGeoFormat(text) {
                 }
                 break;
             }
-            case 'b': {
-                if (tokens.length === 4 || tokens.length === 5) {
-                    primitives.push({
-                        type: 'bezier',
-                        control_points: tokens.slice(1)
-                    });
+            case 'b':
+            case 'b3':
+            case 'b4': {
+                const isB3 = cmd === 'b3';
+                const isB4 = cmd === 'b4';
+                const expectedLen = isB3 ? 4 : (isB4 ? 5 : null);
+
+                if (expectedLen !== null) {
+                    if (tokens.length === expectedLen) {
+                        primitives.push({
+                            type: 'bezier',
+                            control_points: tokens.slice(1)
+                        });
+                    } else {
+                        console.warn(`GEO Parser Line ${index + 1}: Invalid '${cmd}' command. Expected ${expectedLen} tokens.`);
+                    }
                 } else {
-                    console.warn(`GEO Parser Line ${index + 1}: Invalid 'b' command. Expected 4 or 5 tokens.`);
+                    if (tokens.length === 4 || tokens.length === 5) {
+                        primitives.push({
+                            type: 'bezier',
+                            control_points: tokens.slice(1)
+                        });
+                    } else {
+                        console.warn(`GEO Parser Line ${index + 1}: Invalid 'b' command. Expected 4 or 5 tokens.`);
+                    }
                 }
                 break;
             }
@@ -524,7 +559,12 @@ function renderModel(data, autoFrame = false) {
                     const circle = new THREE.Line(g, edgeMat);
                     circle.position.copy(c);
                     if (p.normal && p.normal.length === 3) {
-                        const n = new THREE.Vector3(...p.normal).normalize();
+                        const n = new THREE.Vector3(...p.normal);
+                        if (n.lengthSq() < 0.0001) {
+                            console.warn("GEO: Degenerate normal vector detected. Defaulting to [0, 0, 1].");
+                            n.set(0, 0, 1);
+                        }
+                        n.normalize();
                         circle.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
                     }
                     state.modelGroup.add(circle);
@@ -547,7 +587,12 @@ function renderModel(data, autoFrame = false) {
                     const arcLine = new THREE.Line(g, edgeMat);
                     arcLine.position.copy(c);
                     if (p.normal && p.normal.length === 3) {
-                        const n = new THREE.Vector3(...p.normal).normalize();
+                        const n = new THREE.Vector3(...p.normal);
+                        if (n.lengthSq() < 0.0001) {
+                            console.warn("GEO: Degenerate normal vector detected. Defaulting to [0, 0, 1].");
+                            n.set(0, 0, 1);
+                        }
+                        n.normalize();
                         arcLine.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
                     }
                     state.modelGroup.add(arcLine);
@@ -568,7 +613,12 @@ function renderModel(data, autoFrame = false) {
                     const ellipseLine = new THREE.Line(g, edgeMat);
                     ellipseLine.position.copy(c);
                     if (p.normal && p.normal.length === 3) {
-                        const n = new THREE.Vector3(...p.normal).normalize();
+                        const n = new THREE.Vector3(...p.normal);
+                        if (n.lengthSq() < 0.0001) {
+                            console.warn("GEO: Degenerate normal vector detected. Defaulting to [0, 0, 1].");
+                            n.set(0, 0, 1);
+                        }
+                        n.normalize();
                         ellipseLine.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
                     }
                     state.modelGroup.add(ellipseLine);
