@@ -325,7 +325,7 @@ function evalExpr(expr, params = {}) {
 }
 
 /* =====================================================================
-   GEOMETRI (.geo) FORMAT PARSER
+   GEOMETRI (.gmtri) FORMAT PARSER
    ===================================================================== */
 function parseGeoFormat(text) {
     const lines = text.split(/\r?\n/);

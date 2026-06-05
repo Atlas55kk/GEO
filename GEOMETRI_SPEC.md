@@ -1,6 +1,6 @@
-# GEOMETRI Specification (`.geo` Format)
+# GEOMETRI Specification (`.gmtri` Format)
 
-**GEOMETRI** (saved as `.geo` files) is a compact, space-delimited, line-oriented pre-visualization language designed for AI models and CAD tools to express wireframe 3D geometries.
+**GEOMETRI** (saved as `.gmtri` files) is a compact, space-delimited, line-oriented pre-visualization language designed for AI models and CAD tools to express wireframe 3D geometries.
 
 Its main purpose is to **reduce token usage by 60%–80%** compared to verbose JSON, decreasing context overhead, API latency, and syntax errors for generating AI agents.
 
