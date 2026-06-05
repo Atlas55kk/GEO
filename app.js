@@ -62,6 +62,8 @@ const els = {
     headerCode:        $('header-code'),
     headerVersions:    $('header-versions'),
     panelCode:         $('panel-code'),
+    btnShareDesign:    $('btn-share-design'),
+    ctrlCapture:       $('ctrl-capture'),
 };
 
 /* =====================================================================
@@ -89,7 +91,7 @@ function initThree() {
     state.orthoCamera.position.set(18, 14, 22);
 
     // Renderer
-    state.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    state.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
     state.renderer.setSize(w, h);
     state.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     els.canvas.appendChild(state.renderer.domElement);
@@ -562,7 +564,29 @@ function renderParams(params) {
     Object.entries(params).forEach(([k, v]) => {
         const d = document.createElement('div');
         d.className = 'param-badge';
-        d.innerHTML = `<span class="param-name">${k}</span><span class="param-val">${v}</span>`;
+        d.innerHTML = `
+            <span class="param-name">${k}</span>
+            <input type="number" step="any" class="param-input" value="${v}" data-param="${k}">
+        `;
+
+        const input = d.querySelector('.param-input');
+        const updateVal = () => {
+            const val = parseFloat(input.value);
+            if (!isNaN(val)) {
+                const tab = state.tabs.find(t => t.id === state.activeTabId);
+                if (tab) {
+                    const activeVer = tab.versions.find(ver => ver.id === tab.activeVersionId);
+                    if (activeVer) {
+                        activeVer.data.parameters[k] = val;
+                        renderModel(activeVer.data, false); // Keep camera stable
+                        els.json.value = JSON.stringify(activeVer.data, null, 2);
+                    }
+                }
+            }
+        };
+
+        input.oninput = updateVal;
+        input.onchange = updateVal;
         els.params.appendChild(d);
     });
 }
@@ -692,6 +716,16 @@ function initControls() {
             }
         }
     };
+
+    // Share design
+    els.btnShareDesign.onclick = () => {
+        generateShareLink();
+    };
+
+    // Capture viewport
+    els.ctrlCapture.onclick = () => {
+        captureViewport();
+    };
 }
 
 /* =====================================================================
@@ -766,6 +800,60 @@ function initSSE() {
             if (payload?.data) window.loadGeometriModel(payload.data, payload.tab || 'Local_Design');
         } catch {}
     };
+}
+
+/* =====================================================================
+   ADVANCED UTILITIES
+   ===================================================================== */
+function captureViewport() {
+    if (!state.renderer) return;
+    state.renderer.render(state.scene, getCamera());
+
+    const dataUrl = state.renderer.domElement.toDataURL('image/png');
+    const link = document.createElement('a');
+    
+    let name = 'GEO_design';
+    if (state.activeTabId) {
+        const tab = state.tabs.find(t => t.id === state.activeTabId);
+        if (tab) name = tab.name.replace(/\s+/g, '_');
+    }
+    
+    link.download = `${name}.png`;
+    link.href = dataUrl;
+    link.click();
+    toast('Viewport screenshot captured', 'success');
+}
+
+function generateShareLink() {
+    if (!state.activeTabId) {
+        toast('No design loaded to share', 'error');
+        return;
+    }
+    const tab = state.tabs.find(t => t.id === state.activeTabId);
+    if (!tab) return;
+    const activeVer = tab.versions.find(v => v.id === tab.activeVersionId);
+    if (!activeVer) return;
+
+    try {
+        const jsonStr = JSON.stringify(activeVer.data);
+        const b64 = btoa(unescape(encodeURIComponent(jsonStr)));
+        const safeB64 = b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        
+        const host = location.hostname === 'localhost' || location.hostname === '127.0.0.1' 
+            ? 'https://atlas55kk.github.io/GEO/' 
+            : location.origin + location.pathname;
+            
+        const shareUrl = `${host}?data=${safeB64}&tab=${encodeURIComponent(tab.name)}`;
+        
+        navigator.clipboard.writeText(shareUrl).then(() => {
+            toast('Shareable URL copied to clipboard!', 'success');
+        }).catch(() => {
+            toast('Failed to copy link automatically', 'error');
+        });
+    } catch (e) {
+        console.error(e);
+        toast('Failed to generate share link', 'error');
+    }
 }
 
 /* =====================================================================
